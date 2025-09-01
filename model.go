@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/gofiber/fiber/v2"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -13,6 +15,29 @@ type Book struct {
 	Author      string `json:"author"`
 	Description string `json:"description"`
 	Price       int    `json:"price"`
+}
+
+type User struct {
+	gorm.Model
+	Email    string `json:"email" gorm:"unique"`
+	Password string `json:"password"`
+}
+
+func createUser(db *gorm.DB, c *fiber.Ctx) error {
+	user := new(User)
+	if err := c.BodyParser(user); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to hash password"})
+	}
+	user.Password = string(hashedPassword)
+
+	db.Create(&user)
+	return c.JSON(user)
+
 }
 
 // get all books
@@ -57,14 +82,4 @@ func DeleteBook(db *gorm.DB, id uint) {
 		log.Fatalf("Error deleting book: %v", result.Error)
 	}
 	fmt.Println("Book deleted successfully")
-}
-
-func searchBook(db *gorm.DB, bookName string) []Book {
-	var books []Book
-	result := db.Where("name = ?", bookName).Find(&books)
-
-	if result.Error != nil {
-		log.Fatalf("Error deleting book: %v", result.Error)
-	}
-	return books
 }
