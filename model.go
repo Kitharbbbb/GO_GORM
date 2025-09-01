@@ -24,18 +24,28 @@ type User struct {
 }
 
 func createUser(db *gorm.DB, c *fiber.Ctx) error {
+
+	//สร้างuser เป็นpointerไปยัง struct Userเพื่อเอาไว้เก็บข้อมูลที่รับมาจาก request
 	user := new(User)
+
+	//BodyParser ของ Fiber จะอ่าน JSON body
 	if err := c.BodyParser(user); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	//การhash เข้ารหัสโดยbcryptสร้างเป็นbyte table user colum password เข้ารหัสและทำการวน
+	//bcrypt.DefaultCost คือ cost , int โดยปกติintจะเป็น 10
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to hash password"})
 	}
+
+	//แปลง hashedPassword เป็น string
 	user.Password = string(hashedPassword)
 
+	//ทำการเก็บ password ที่เข้ารหัสแล้วลงใน user
 	db.Create(&user)
+
 	return c.JSON(user)
 
 }
