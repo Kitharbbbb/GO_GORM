@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v4"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -21,6 +22,20 @@ const (
 	password = "mypassword" // as defined in docker-compose.yml
 	dbname   = "mydatabase" // as defined in docker-compose.yml
 )
+
+func authRequired(c *fiber.Ctx) error {
+	cookie := c.Cookies("jwt")
+
+	token, err := jwt.ParseWithClaims(cookie, &jwt.StandardClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return jwtSecretKey, nil
+	})
+
+	if err != nil || !token.Valid {
+		return c.SendStatus(fiber.StatusUnauthorized)
+	}
+
+	return c.Next()
+}
 
 func main() {
 	// Configure your PostgreSQL database details here
@@ -49,6 +64,23 @@ func main() {
 	db.AutoMigrate(&Book{})
 
 	app := fiber.New()
+
+	// add For prevent auth
+	app.Use("/books", authRequired)
+
+	// CRUD routes = API Set book ตัวเดิม
+
+	app.Post("/register", func(c *fiber.Ctx) error {
+		return createUser(db, c)
+	})
+
+	app.Post("/login", func(c *fiber.Ctx) error {
+		return loginUser(db, c)
+	})
+
+	app.Post("/logout", authRequired, func(c *fiber.Ctx) error {
+		return logoutUser(c)
+	})
 
 	app.Get("/books", func(c *fiber.Ctx) error {
 		return c.JSON(GetBooks(db))

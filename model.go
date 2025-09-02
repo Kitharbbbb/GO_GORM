@@ -4,10 +4,16 @@ import (
 	"fmt"
 	"log"
 
+	"time"
+
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v4"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+// JWT secret key
+var jwtSecretKey = []byte("supersecretkey123")
 
 type Book struct {
 	gorm.Model
@@ -44,10 +50,67 @@ func createUser(db *gorm.DB, c *fiber.Ctx) error {
 	user.Password = string(hashedPassword)
 
 	//ทำการเก็บ password ที่เข้ารหัสแล้วลงใน user
-	db.Create(&user)
+	db.Create(user)
 
-	return c.JSON(user)
+	return c.JSON(fiber.Map{
+		"message":  "user created successfully",
+		"user":     user.Email,
+		"password": user.Password,
+	})
+}
 
+func loginUser(db *gorm.DB, c *fiber.Ctx) error {
+	var input User
+	var user User
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Find user by email
+	db.Where("email = ?", input.Email).First(&user)
+
+	// Check password
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
+		return c.SendStatus(fiber.StatusUnauthorized)
+	}
+
+	// Create JWT token
+	token := jwt.New(jwt.SigningMethodHS256)
+	claims := token.Claims.(jwt.MapClaims)
+	claims["user_id"] = user.ID
+	claims["exp"] = time.Now().Add(time.Hour * 72).Unix()
+
+	t, err := token.SignedString(jwtSecretKey)
+	if err != nil {
+		return c.SendStatus(fiber.StatusInternalServerError)
+	}
+
+	// Set cookie
+	c.Cookie(&fiber.Cookie{
+		Name:     "jwt",
+		Value:    t,
+		Expires:  time.Now().Add(time.Hour * 72),
+		HTTPOnly: true,
+	})
+
+	return c.JSON(fiber.Map{
+		"message": "success",
+		"token":   t,
+	})
+}
+
+func logoutUser(c *fiber.Ctx) error {
+	// Clear the JWT cookie
+	c.Cookie(&fiber.Cookie{
+		Name:     "jwt",
+		Value:    "",
+		Expires:  time.Now().Add(-time.Hour),
+		HTTPOnly: true,
+	})
+
+	return c.JSON(fiber.Map{
+		"message": "success",
+	})
 }
 
 // get all books
