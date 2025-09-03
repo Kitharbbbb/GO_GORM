@@ -13,7 +13,7 @@ import (
 )
 
 // JWT secret key
-var jwtSecretKey = []byte("supersecretkey123")
+var tSecretKey = []byte("supersecretkey123")
 
 type Book struct {
 	gorm.Model
@@ -60,8 +60,10 @@ func createUser(db *gorm.DB, c *fiber.Ctx) error {
 }
 
 func loginUser(db *gorm.DB, c *fiber.Ctx) error {
+
 	var input User
 	var user User
+
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -69,7 +71,7 @@ func loginUser(db *gorm.DB, c *fiber.Ctx) error {
 	// Find user by email
 	db.Where("email = ?", input.Email).First(&user)
 
-	// Check password
+	// Check password โดยเข้ารหัสbcrypt เช็คจาก user.password กับ input.password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
 		return c.SendStatus(fiber.StatusUnauthorized)
 	}
@@ -80,7 +82,7 @@ func loginUser(db *gorm.DB, c *fiber.Ctx) error {
 	claims["user_id"] = user.ID
 	claims["exp"] = time.Now().Add(time.Hour * 72).Unix()
 
-	t, err := token.SignedString(jwtSecretKey)
+	t, err := token.SignedString(tSecretKey)
 	if err != nil {
 		return c.SendStatus(fiber.StatusInternalServerError)
 	}
@@ -93,10 +95,11 @@ func loginUser(db *gorm.DB, c *fiber.Ctx) error {
 		HTTPOnly: true,
 	})
 
+	log.Println("Generated JWT:", t)
 	return c.JSON(fiber.Map{
 		"message": "success",
-		"token":   t,
 	})
+
 }
 
 func logoutUser(c *fiber.Ctx) error {

@@ -24,17 +24,27 @@ const (
 )
 
 func authRequired(c *fiber.Ctx) error {
+	// Get JWT from cookies
 	cookie := c.Cookies("jwt")
+	if cookie == "" {
+		return c.SendStatus(fiber.StatusBadRequest)
+	}
 
+	//func ParseWithClaims(tokenString string, claims Claims, keyFunc Keyfunc, options ...ParserOption) (*Token, error)
+	// tokenString ข้อความ JWT ที่เราได้มา
+	// claims struct ที่เราคาดหวังจะใส่ข้อมูล JWT ลงไป (ที่นี่คือ &jwt.StandardClaims{})
+	// keyFunc ฟังก์ชันที่บอกว่าจะใช้ key อะไรในการ verify signature ของ JWT
+	// options (ไม่บังคับ) ใส่ parser option เพิ่มเติม เช่น validation พิเศษ
 	token, err := jwt.ParseWithClaims(cookie, &jwt.StandardClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return jwtSecretKey, nil
+		return []byte(tSecretKey), nil
 	})
 
+	//ตรวจสอบความถูกต้องของ token
 	if err != nil || !token.Valid {
 		return c.SendStatus(fiber.StatusUnauthorized)
 	}
 
-	return c.Next()
+	return c.Next() //ไป handler ถัดไป
 }
 
 func main() {
