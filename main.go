@@ -6,10 +6,6 @@ import (
 	"os"
 	"time"
 
-	"strconv"
-
-	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v4"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -22,30 +18,6 @@ const (
 	password = "mypassword" // as defined in docker-compose.yml
 	dbname   = "mydatabase" // as defined in docker-compose.yml
 )
-
-func authRequired(c *fiber.Ctx) error {
-	// Get JWT from cookies
-	cookie := c.Cookies("jwt")
-	if cookie == "" {
-		return c.SendStatus(fiber.StatusBadRequest)
-	}
-
-	//func ParseWithClaims(tokenString string, claims Claims, keyFunc Keyfunc, options ...ParserOption) (*Token, error)
-	// tokenString ข้อความ JWT ที่เราได้มา
-	// claims struct ที่เราคาดหวังจะใส่ข้อมูล JWT ลงไป (ที่นี่คือ &jwt.StandardClaims{})
-	// keyFunc ฟังก์ชันที่บอกว่าจะใช้ key อะไรในการ verify signature ของ JWT
-	// options (ไม่บังคับ) ใส่ parser option เพิ่มเติม เช่น validation พิเศษ
-	token, err := jwt.ParseWithClaims(cookie, &jwt.StandardClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return []byte(tSecretKey), nil
-	})
-
-	//ตรวจสอบความถูกต้องของ token
-	if err != nil || !token.Valid {
-		return c.SendStatus(fiber.StatusUnauthorized)
-	}
-
-	return c.Next() //ไป handler ถัดไป
-}
 
 func main() {
 	// Configure your PostgreSQL database details here
@@ -71,80 +43,53 @@ func main() {
 		panic("failed to connect to database")
 	}
 
-	db.AutoMigrate(&Book{})
+	db.AutoMigrate(&Book{}, &Publisher{}, &Author{}, &AuthorBook{})
 
-	app := fiber.New()
+	// ขาสร้าง
+	publisher := Publisher{
+		Details: "Publisher Details",
+		Name:    "Publisher Name",
+	}
+	_ = createPublisher(db, &publisher)
 
-	// add For prevent auth
-	app.Use("/books", authRequired)
+	// Example data for a new author
+	author := Author{
+		Name: "Author Name",
+	}
+	_ = createAuthor(db, &author)
 
-	// CRUD routes = API Set book ตัวเดิม
+	// // Example data for a new book with an author
+	book := Book{
+		Name:        "Book Title",
+		Author:      "Book Author",
+		Description: "Book Description",
+		PublisherID: publisher.ID,     // Use the ID of the publisher created above
+		Authors:     []Author{author}, // Add the created author
+	}
+	_ = createBookWithAuthor(db, &book, []uint{author.ID})
 
-	app.Post("/register", func(c *fiber.Ctx) error {
-		return createUser(db, c)
-	})
+	// ขาเรียก
 
-	app.Post("/login", func(c *fiber.Ctx) error {
-		return loginUser(db, c)
-	})
+	// Example: Get a book with its publisher
+	bookWithPublisher, err := getBookWithPublisher(db, 1) // assuming a book with ID 1
+	if err != nil {
+		// Handle error
+	}
 
-	app.Post("/logout", authRequired, func(c *fiber.Ctx) error {
-		return logoutUser(c)
-	})
+	// Example: Get a book with its authors
+	bookWithAuthors, err := getBookWithAuthors(db, 1) // assuming a book with ID 1
+	if err != nil {
+		// Handle error
+	}
 
-	app.Get("/books", func(c *fiber.Ctx) error {
-		return c.JSON(GetBooks(db))
-	})
-	app.Get("/books/:id", func(c *fiber.Ctx) error {
-		id, err := strconv.Atoi(c.Params("id"))
-		if err != nil {
-			return c.SendStatus(fiber.StatusBadRequest)
-		}
-		book := GetBook(db, id)
-		return c.JSON(book)
-	})
-	app.Post("/books", func(c *fiber.Ctx) error {
-		var book Book
-		if err := c.BodyParser(&book); err != nil {
-			return c.SendStatus(fiber.StatusBadRequest)
-		}
-		CreateBook(db, &book)
-		if err != nil {
-			return c.SendStatus(fiber.StatusBadRequest)
-		}
-		return c.JSON(fiber.Map{
-			"message": "Book created successfully",
-			"book":    book,
-		})
-	})
-	app.Put("/books/:id", func(c *fiber.Ctx) error {
-		id, err := strconv.Atoi(c.Params("id"))
-		if err != nil {
-			return c.SendStatus(fiber.StatusBadRequest)
-		}
-		book := GetBook(db, id)
-		if err := c.BodyParser(&book); err != nil {
-			return c.SendStatus(fiber.StatusBadRequest)
-		}
-		book.ID = uint(id)
-		if err := UpdateBook(db, book); err != nil {
-			return c.SendStatus(fiber.StatusBadRequest)
-		}
-		return c.JSON(fiber.Map{
-			"message": "Book updated successfully",
-			"book":    book,
-		})
-	})
-	app.Delete("/books/:id", func(c *fiber.Ctx) error {
-		id, err := strconv.Atoi(c.Params("id"))
-		if err != nil {
-			return c.SendStatus(fiber.StatusBadRequest)
-		}
-		DeleteBook(db, uint(id))
-		return c.JSON(fiber.Map{
-			"message": "Book deleted successfully",
-		})
-	})
+	// Example: List books of a specific author
+	authorBooks, err := listBooksOfAuthor(db, 1) // assuming an author with ID 1
+	if err != nil {
+		// Handle error
+	}
 
-	app.Listen(":3000")
+	fmt.Println(bookWithPublisher)
+	fmt.Println(bookWithAuthors)
+	fmt.Println(authorBooks)
+
 }

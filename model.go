@@ -1,162 +1,98 @@
 package main
 
 import (
-	"fmt"
-	"log"
-
-	"time"
-
-	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v4"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
-
-// JWT secret key
-var tSecretKey = []byte("supersecretkey123")
 
 type Book struct {
 	gorm.Model
 	Name        string `json:"name"`
 	Author      string `json:"author"`
 	Description string `json:"description"`
-	Price       int    `json:"price"`
+	PublisherID uint
+	Publisher   Publisher
+	Authors     []Author `gorm:"many2many:author_books;"`
 }
 
-type User struct {
+type Publisher struct {
 	gorm.Model
-	Email    string `json:"email" gorm:"unique"`
-	Password string `json:"password"`
+	Details string
+	Name    string
 }
 
-func createUser(db *gorm.DB, c *fiber.Ctx) error {
-
-	//สร้างuser เป็นpointerไปยัง struct Userเพื่อเอาไว้เก็บข้อมูลที่รับมาจาก request
-	user := new(User)
-
-	//BodyParser ของ Fiber จะอ่าน JSON body
-	if err := c.BodyParser(user); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	//การhash เข้ารหัสโดยbcryptสร้างเป็นbyte table user colum password เข้ารหัสและทำการวน
-	//bcrypt.DefaultCost คือ cost , int โดยปกติintจะเป็น 10
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to hash password"})
-	}
-
-	//แปลง hashedPassword เป็น string
-	user.Password = string(hashedPassword)
-
-	//ทำการเก็บ password ที่เข้ารหัสแล้วลงใน user
-	db.Create(user)
-
-	return c.JSON(fiber.Map{
-		"message":  "user created successfully",
-		"user":     user.Email,
-		"password": user.Password,
-	})
+type Author struct {
+	gorm.Model
+	Name  string
+	Books []Book `gorm:"many2many:author_books;"`
 }
 
-func loginUser(db *gorm.DB, c *fiber.Ctx) error {
-
-	var input User
-	var user User
-
-	if err := c.BodyParser(&input); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	// Find user by email
-	db.Where("email = ?", input.Email).First(&user)
-
-	// Check password โดยเข้ารหัสbcrypt เช็คจาก user.password กับ input.password
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
-		return c.SendStatus(fiber.StatusUnauthorized)
-	}
-
-	// Create JWT token
-	token := jwt.New(jwt.SigningMethodHS256)
-	
-	claims := token.Claims.(jwt.MapClaims)
-	claims["user_id"] = user.ID
-	claims["exp"] = time.Now().Add(time.Hour * 72).Unix()
-
-	t, err := token.SignedString(tSecretKey)
-	if err != nil {
-		return c.SendStatus(fiber.StatusInternalServerError)
-	}
-
-	// Set cookie
-	c.Cookie(&fiber.Cookie{
-		Name:     "jwt",
-		Value:    t,
-		Expires:  time.Now().Add(time.Hour * 72),
-		HTTPOnly: true,
-	})
-
-	log.Println("Generated JWT:", t)
-	return c.JSON(fiber.Map{
-		"message": "success",
-	})
-
+type AuthorBook struct {
+	AuthorID uint
+	Author   Author
+	BookID   uint
+	Book     Book
 }
 
-func logoutUser(c *fiber.Ctx) error {
-	// Clear the JWT cookie
-	c.Cookie(&fiber.Cookie{
-		Name:     "jwt",
-		Value:    "",
-		Expires:  time.Now().Add(-time.Hour),
-		HTTPOnly: true,
-	})
-
-	return c.JSON(fiber.Map{
-		"message": "success",
-	})
-}
-
-// get all books
-func GetBooks(db *gorm.DB) []Book {
-	var books []Book
-	result := db.Find(&books)
+func createPublisher(db *gorm.DB, publisher *Publisher) error {
+	result := db.Create(publisher)
 	if result.Error != nil {
-		log.Fatalf("Error finding book: %v", result.Error)
-	}
-	return books
-}
-
-func CreateBook(db *gorm.DB, book *Book) {
-	result := db.Create(book)
-	if result.Error != nil {
-		log.Fatalf("Error creating book: %v", result.Error)
-	}
-	fmt.Println("Book created successfully")
-}
-
-func GetBook(db *gorm.DB, id int) *Book {
-	var book Book
-	result := db.First(&book, id)
-	if result.Error != nil {
-		log.Fatalf("Error finding book: %v", result.Error)
-	}
-	return &book
-}
-
-func UpdateBook(db *gorm.DB, book *Book) error {
-	result := db.Save(book)
-	if result.Error != nil {
-		return fmt.Errorf("Error updating book: %v", result.Error)
+		return result.Error
 	}
 	return nil
 }
 
-func DeleteBook(db *gorm.DB, id uint) {
-	var book Book
-	result := db.Unscoped().Delete(&book, id)
+func createAuthor(db *gorm.DB, author *Author) error {
+	result := db.Create(author)
 	if result.Error != nil {
-		log.Fatalf("Error deleting book: %v", result.Error)
+		return result.Error
 	}
-	fmt.Println("Book deleted successfully")
+	return nil
+}
+
+func createBookWithAuthor(db *gorm.DB, book *Book, authorIDs []uint) error {
+	// First, create the book
+	if err := db.Create(book).Error; err != nil {
+		return err
+	}
+
+	// add authors (many2many)
+	if len(authorIDs) > 0 {
+		var authors []Author
+		if err := db.Where("id IN ?", authorIDs).Find(&authors).Error; err != nil {
+			return err
+		}
+		if err := db.Model(book).Association("Authors").Append(&authors); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func getBookWithPublisher(db *gorm.DB, bookID uint) (*Book, error) {
+	var book Book
+	result := db.Preload("Publisher").First(&book, bookID)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &book, nil
+}
+
+func getBookWithAuthors(db *gorm.DB, bookID uint) (*Book, error) {
+	var book Book
+	result := db.Preload("Authors").First(&book, bookID)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &book, nil
+}
+
+func listBooksOfAuthor(db *gorm.DB, authorID uint) ([]Book, error) {
+	var books []Book
+	result := db.Joins("JOIN author_books on author_books.book_id = books.id").
+		Where("author_books.author_id = ?", authorID).
+		Find(&books)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return books, nil
 }
