@@ -48,33 +48,33 @@ func main() {
 
 	// ขาสร้าง
 	publisher := Publisher{
-		Details: "boy dan 4",
-		Name:    "boy skung",
+		Details: "Publisher Details",
+		Name:    "Publisher Name",
 	}
 	_ = createPublisher(db, &publisher)
 
 	// Example data for a new author
 	author := Author{
-		Name: "Joo",
+		Name: "Author Name",
 	}
 	_ = createAuthor(db, &author)
 
 	// // Example data for a new book with an author
 	book := Book{
-		Name:        "Money Title",
-		Author:      "Joo",
-		Description: "Make money for U",
+		Name:        "Book Title",
+		Author:      "Book Author",
+		Description: "Book Description",
 		PublisherID: publisher.ID,     // Use the ID of the publisher created above
 		Authors:     []Author{author}, // Add the created author
 	}
 	_ = createBookWithAuthor(db, &book, []uint{author.ID})
 
 	app := fiber.New()
-	app.Get("/BookWithPublisher/:id", func(c *fiber.Ctx) error {
+	app.Get("/BookWithPublisher", func(c *fiber.Ctx) error {
 		id, _ := c.ParamsInt("id") // ดึงจาก path param
 		return getBookWithPublisher(db, uint(id), c)
 	})
-	app.Get("/BookWithAuthors/:id", func(c *fiber.Ctx) error {
+	app.Get("/BookWithAuthors", func(c *fiber.Ctx) error {
 		id, _ := c.ParamsInt("id") // ดึงจาก path param
 		return getBookWithAuthors(db, uint(id), c)
 	})

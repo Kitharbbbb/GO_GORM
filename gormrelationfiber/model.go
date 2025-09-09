@@ -51,7 +51,7 @@ func createAuthor(db *gorm.DB, author *Author) error {
 }
 
 func createBookWithAuthor(db *gorm.DB, book *Book, authorIDs []uint) error {
-	// Find, create the book
+	// First, create the book
 	if err := db.Create(book).Error; err != nil {
 		return err
 	}
@@ -70,9 +70,9 @@ func createBookWithAuthor(db *gorm.DB, book *Book, authorIDs []uint) error {
 }
 
 func getBookWithPublisher(db *gorm.DB, bookID uint, c *fiber.Ctx) error {
-	id := c.Params("id")
+	id := c.Query("id")
 	var book Book
-	result := db.Preload("Publisher").Find(&book, id)
+	result := db.Preload("Publisher").First(&book, id)
 	if result.Error != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Book not found"})
 	}
@@ -80,9 +80,9 @@ func getBookWithPublisher(db *gorm.DB, bookID uint, c *fiber.Ctx) error {
 }
 
 func getBookWithAuthors(db *gorm.DB, bookID uint, c *fiber.Ctx) error {
-	id := c.Params("id")
+	id := c.Query("id")
 	var book Book
-	result := db.Preload("Authors").Find(&book, id)
+	result := db.Preload("Authors").First(&book, id)
 	if result.Error != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Book not found"})
 	}
